@@ -1,0 +1,94 @@
+service: replicate-sdk
+package:
+  individually: true
+provider:
+  name: aws
+  runtime: nodejs18.x
+  tracing:
+    lambda: true
+  region: us-west-2
+  memorySize: 1024
+  timeout: 90
+  stage: development
+  iam:
+    role: ExecutionRole
+
+custom:
+  allowedHeaders:
+    - Accept
+    - Content-Type
+    - Content-Length
+    - Authorization
+  stage: ${opt:stage, self:provider.stage}
+  bucket: ${self:service}-${self:provider.stage}
+  customDomain:
+    domainName: dev-sdk.yagagames.com
+    basePath: ''
+    stage: ${self:provider.stage}
+    createRoute53Record: true
+  optimize:
+    external:
+      - aws-jwt-verify
+
+functions:
+  generate-predictions:
+    handler: api/predictions/generate-predictions.handler
+    description: POST /api/predictions
+    events:
+      - http:
+          path: /api/predictions
+          method: post
+          cors:
+            origin: '*'
+            headers: ${self:custom.allowedHeaders}
+  get-predictions:
+    handler: api/predictions/get-predictions.handler
+    description: GET /api/predictions/{predictionId}
+    events:
+      - http:
+        path: /api/predictions/{predictionId}
+        method: get
+        cors:
+          origin: '*'
+          headers: ${self:custom.allowedHeaders}
+
+resources:
+  Resources:
+    ExecutionRole:
+      Type: AWS::IAM::Role
+      Properties:
+        RoleName: ${self:service}-${self:custom.stage}-execution-role
+        ManagedPolicyArns: 
+          - arn:aws:iam::aws:policy/service-role/AWSLambdaRole
+          - arn:aws:iam::aws:policy/CloudWatchLambdaInsightsExecutionRolePolicy    
+          - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+          - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess   
+        Policies:      
+          - PolicyName: ${self:service}-${self:custom.stage}-execution-policy
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: "Allow"
+                  Action:
+                    - s3:*
+                  Resource:
+                    - "arn:aws:s3:::${self:custom.bucket}/*" 
+                    - "*"
+    StorageBucket:
+      Type: "AWS::S3::Bucket"
+      Properties:
+        BucketName: ${self:custom.bucket}
+        CorsConfiguration:
+          CorsRules:
+            -
+              AllowedOrigins:
+                - '*'
+              AllowedHeaders:
+                - '*'
+              AllowedMethods:
+                - GET
+                - PUT
+                - POST
+                - DELETE
+                - HEAD
+              MaxAge: 3000
